@@ -1,0 +1,70 @@
+name: taskflow
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?Define MONGO_ROOT_USER en .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Define MONGO_ROOT_PASSWORD en .env}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:?Define MONGO_DB en .env}
+    volumes:
+      - mongo-data:/data/db
+    # Sin "ports": Mongo solo es accesible dentro de la red de Compose.
+    networks:
+      - taskflow-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  api:
+    build:
+      context: ./api
+    image: taskflow-api:1.0.0
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      # La API llega a Mongo por el nombre del servicio (mongo:27017).
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      DB_NAME: ${MONGO_DB}
+      MAX_POOL_SIZE: ${MAX_POOL_SIZE:-10}
+    ports:
+      - "3000:3000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - taskflow-net
+    healthcheck:
+      # GET / responde "TaskFlow API funcionando"; el servidor solo escucha después de conectar a Mongo.
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: ./web
+      args:
+        VITE_API_URL: ${VITE_API_URL:?Define VITE_API_URL en .env}
+    image: taskflow-web:1.0.0
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - taskflow-net
+
+networks:
+  taskflow-net:
+    driver: bridge
+
+volumes:
+  mongo-data:

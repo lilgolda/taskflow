@@ -1,215 +1,118 @@
-# TaskFlow API
+# TaskFlow
 
-API REST para gestionar **usuarios, equipos y tareas** en equipo. Construida con **Node.js, Express y MongoDB (Mongoose)**, conectada a **MongoDB Atlas**. Proyecto final del curso.
+Gestor de tareas por equipos: **React (Vite) + Node.js (Express) + MongoDB**, contenerizado con Docker Compose.
 
-## Tecnologías
+La API es la del proyecto final del módulo anterior (usuarios, equipos y tareas). Su documentación completa (endpoints, filtros, aggregation pipeline, errores) está en [`api/README.md`](api/README.md).
 
-- Node.js 18 o superior
-- Express 4
-- MongoDB Atlas + Mongoose 8
-- dotenv (variables de entorno) y cors (para conectar el frontend React)
+| Servicio | Build / imagen | Puerto en el host | Descripción |
+|---|---|---|---|
+| `web` | `web/Dockerfile` (Node → Nginx) | **8080** → 80 | Frontend React servido por Nginx |
+| `api` | `api/Dockerfile` (Node 22 Alpine) | **3000** → 3000 | API REST (`/api/tasks`, `/api/teams`, `/api/users`) |
+| `mongo` | `mongo:7` | no se publica | Base de datos, solo accesible en la red interna |
 
-## Instalación y ejecución
+## Requisitos previos
 
-1. Clona el repositorio e instala las dependencias:
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows / macOS) o Docker Engine + plugin Compose (Linux).
+- Docker Compose v2 (`docker compose version`).
+- Git.
+- Puertos **8080** y **3000** libres.
 
-   ```bash
-   git clone https://github.com/lilgolda/taskflow-api.git
-   cd taskflow-api
-   npm install
-   ```
+## Levantar el proyecto desde cero
 
-2. Crea tu archivo `.env` a partir del ejemplo:
+```bash
+# 1. Clonar el repositorio
+git clone <URL-del-repositorio> taskflow
+cd taskflow
 
-   ```bash
-   # Windows (PowerShell o CMD)
-   copy .env.example .env
+# 2. Crear el archivo de variables a partir de la plantilla
+cp .env.example .env          # PowerShell: Copy-Item .env.example .env
 
-   # Mac / Linux
-   cp .env.example .env
-   ```
+# 3. (Opcional) Editar .env y cambiar el usuario y la contraseña de Mongo.
+#    Los valores de ejemplo ya permiten arrancar en local.
 
-3. Abre `.env` y coloca tu cadena de conexión real de MongoDB Atlas (ver la sección siguiente).
+# 4. Construir y levantar los tres servicios
+docker compose up -d --build
 
-4. Inicia el servidor:
+# 5. Comprobar el estado (mongo y api deben aparecer como "healthy")
+docker compose ps
+```
 
-   ```bash
-   npm run dev     # desarrollo (se reinicia solo al guardar cambios)
-   npm start       # producción
-   ```
+Orden de arranque: `mongo` (healthy) → `api` (healthy) → `web`.
 
-5. Abre `http://localhost:3000/`. Debe responder `TaskFlow API funcionando`.
+## Cómo probarlo
 
-### Cómo obtener la cadena de conexión en MongoDB Atlas
+1. Abre http://localhost:8080
+2. Ve a **Equipos** y crea un equipo (en la API toda tarea pertenece a un equipo).
+3. Vuelve a **Tareas** y crea una tarea. Puedes cambiar su estado, filtrar por equipo/estado o abrir su detalle.
 
-1. En Atlas crea un cluster gratuito.
-2. En **Database Access** crea un usuario con contraseña.
-3. En **Network Access** agrega tu IP (o `0.0.0.0/0` solo para desarrollo).
-4. En **Connect → Drivers** copia la cadena `mongodb+srv://...` y reemplaza `<usuario>` y `<password>`.
-5. Pégala en `MONGODB_URI` dentro de tu `.env`. La base de datos se indica aparte en `DB_NAME`.
+| Qué | URL |
+|---|---|
+| Aplicación | http://localhost:8080 |
+| Ruta interna de React (prueba de `try_files`) | http://localhost:8080/teams (recarga con F5) |
+| API: comprobación | http://localhost:3000/ |
+| API: tareas (JSON) | http://localhost:3000/api/tasks |
+| API: equipos (JSON) | http://localhost:3000/api/teams |
 
-## Variables de entorno
+## Detener y borrar datos
 
-| Variable        | Obligatoria | Descripción                                                        | Ejemplo                                   |
-| --------------- | ----------- | ------------------------------------------------------------------ | ----------------------------------------- |
-| `PORT`          | No          | Puerto del servidor (por defecto 3000)                             | `3000`                                    |
-| `MONGODB_URI`   | **Sí**      | Cadena de conexión de MongoDB Atlas                                | `mongodb+srv://usuario:clave@cluster...`  |
-| `DB_NAME`       | No          | Nombre de la base de datos, usado con la opción `dbName`          | `taskflow`                                |
-| `MAX_POOL_SIZE` | No          | Tamaño máximo del pool de conexiones (por defecto 10)             | `10`                                      |
-| `NODE_ENV`      | No          | `development` o `production`                                       | `development`                             |
+```bash
+# Ver logs (todos o de un servicio)
+docker compose logs -f
+docker compose logs -f api
 
-> El archivo `.env.example` no contiene credenciales reales.
+# Detener los contenedores (los datos se conservan en el volumen)
+docker compose stop
 
-## Estructura del proyecto
+# Detener y eliminar contenedores y red (los datos se conservan)
+docker compose down
+
+# Detener y BORRAR TAMBIÉN LOS DATOS (elimina el volumen mongo-data)
+docker compose down -v
+```
+
+> Si cambias `MONGO_ROOT_USER` o `MONGO_ROOT_PASSWORD` después del primer arranque, ejecuta
+> `docker compose down -v` para que Mongo vuelva a crear el usuario con los nuevos valores.
+>
+> Si cambias `VITE_API_URL`, reconstruye el frontend: `docker compose up -d --build web`.
+
+## Variables de entorno (`.env`)
+
+| Variable | Uso |
+|---|---|
+| `MONGO_ROOT_USER` / `MONGO_ROOT_PASSWORD` | Usuario administrador que crea Mongo; la API los usa para armar `MONGODB_URI` |
+| `MONGO_DB` | Nombre de la base de datos (llega a la API como `DB_NAME`) |
+| `MAX_POOL_SIZE` | Pool de conexiones de Mongoose |
+| `VITE_API_URL` | URL de la API que usa el navegador; se pasa como `ARG` al build del frontend |
+
+## Estructura
 
 ```
-taskflow-api/
-├── server.js              Conecta a MongoDB (una sola vez) y levanta el servidor
-├── app.js                 Configura Express, rutas y manejo de errores
-├── config/
-│   └── db.js              Conexión a MongoDB con dbName y pool de conexiones
-├── models/                Esquemas de Mongoose: User, Team, Task
-├── controllers/           Lógica de cada endpoint (async/await + try/catch)
-├── routes/                Define las URLs y las conecta con los controladores
-├── middleware/
-│   ├── errorHandler.js    Manejo centralizado de errores
-│   ├── notFound.js        Rutas inexistentes (404)
-│   └── validateObjectId.js  Valida el :id de las URLs (400)
-├── utils/                 Funciones de apoyo (AppError, pick, consultas...)
-├── requests.http          Colección de pruebas (un ejemplo por endpoint)
+taskflow/
+├── api/                  API Express + Mongoose
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── server.js, app.js
+│   └── config/ controllers/ middleware/ models/ routes/ utils/
+├── web/                  Frontend React (Vite + React Router)
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── nginx.conf
+│   ├── package.json
+│   ├── package-lock.json
+│   └── src/
+├── docker-compose.yml
 ├── .env.example
+├── .gitignore
 └── README.md
 ```
 
-Recorrido de una petición: **ruta** (`routes/`) → **controlador** (`controllers/`) → **modelo** (`models/`) → **MongoDB Atlas**.
+## Desarrollo sin Docker
 
-## Modelos
+La API se puede seguir ejecutando como en el módulo anterior (con MongoDB Atlas o un Mongo local), usando `api/.env.example`:
 
-**User**: `name` (2-80 caracteres), `email` (único, formato válido), `role` (`admin` o `member`, por defecto `member`), `team` (referencia a Team, opcional).
-
-**Team**: `name` (único, 2-60 caracteres), `description` (máx. 300 caracteres).
-
-**Task**: `title` (3-120 caracteres), `description` (máx. 500), `status` (`todo`, `in-progress` o `done`, por defecto `todo`), `priority` (entero de 1 a 5, por defecto 3), `dueDate`, `completedAt` (la llena la API al marcar la tarea como `done`), `assignedTo` (referencia a User) y `team` (referencia a Team, obligatorio).
-
-Todos incluyen `createdAt` y `updatedAt` automáticamente.
-
-## Endpoints
-
-### Usuarios: `/api/users`
-
-| Método | Ruta             | Descripción                                    |
-| ------ | ---------------- | ---------------------------------------------- |
-| GET    | `/api/users`     | Listar usuarios (filtros: `?team=<id>&role=admin`) |
-| GET    | `/api/users/:id` | Obtener un usuario                             |
-| POST   | `/api/users`     | Crear un usuario                               |
-| PUT    | `/api/users/:id` | Actualizar un usuario                          |
-| DELETE | `/api/users/:id` | Eliminar un usuario (sus tareas quedan sin asignar) |
-
-### Equipos: `/api/teams`
-
-| Método | Ruta                         | Descripción                                              |
-| ------ | ---------------------------- | -------------------------------------------------------- |
-| GET    | `/api/teams`                 | Listar equipos                                           |
-| GET    | `/api/teams/:id`             | Obtener un equipo con sus miembros                       |
-| POST   | `/api/teams`                 | Crear un equipo                                          |
-| PUT    | `/api/teams/:id`             | Actualizar un equipo                                     |
-| DELETE | `/api/teams/:id`             | Eliminar un equipo (sus usuarios quedan sin equipo y sus tareas se eliminan) |
-| GET    | `/api/teams/:id/task-stats`  | **Aggregation Pipeline**: cantidad de tareas por estado  |
-
-### Tareas: `/api/tasks`
-
-| Método | Ruta             | Descripción                                              |
-| ------ | ---------------- | -------------------------------------------------------- |
-| GET    | `/api/tasks`     | Listar tareas con **filtros, orden y paginación**        |
-| GET    | `/api/tasks/:id` | Obtener una tarea                                        |
-| POST   | `/api/tasks`     | Crear una tarea                                          |
-| PUT    | `/api/tasks/:id` | Actualizar una tarea (también sirve para marcarla como `done`) |
-| DELETE | `/api/tasks/:id` | Eliminar una tarea                                       |
-
-## Consultas avanzadas
-
-### 1. Filtros, orden y paginación en `GET /api/tasks`
-
-| Parámetro    | Descripción                                                     | Ejemplo                    |
-| ------------ | --------------------------------------------------------------- | -------------------------- |
-| `status`     | Uno o varios estados separados por coma                         | `status=todo,in-progress`  |
-| `priority`   | Prioridad exacta (1 a 5)                                        | `priority=4`               |
-| `team`       | Id del equipo                                                   | `team=65f...`              |
-| `assignedTo` | Id del usuario asignado                                         | `assignedTo=65f...`        |
-| `search`     | Busca texto dentro del título                                   | `search=login`             |
-| `sort`       | Campos separados por coma; `-` delante = descendente. Permitidos: `title`, `status`, `priority`, `dueDate`, `createdAt`, `updatedAt` | `sort=-priority,dueDate` |
-| `page`       | Número de página (por defecto 1)                                | `page=2`                   |
-| `limit`      | Resultados por página (por defecto 10, máximo 100)              | `limit=5`                  |
-
-Ejemplo:
-
+```bash
+cd api && npm install && npm run dev         # http://localhost:3000
+cd web && npm install && npm run dev         # http://localhost:5173
 ```
-GET /api/tasks?status=todo&sort=-priority&page=1&limit=10
-```
-
-La respuesta incluye los datos y la información de paginación:
-
-```json
-{
-  "success": true,
-  "count": 2,
-  "pagination": { "page": 1, "limit": 10, "total": 2, "totalPages": 1, "hasNextPage": false, "hasPrevPage": false },
-  "data": [ ... ]
-}
-```
-
-### 2. Aggregation Pipeline: tareas por estado de un equipo
-
-```
-GET /api/teams/:id/task-stats
-```
-
-```json
-{
-  "success": true,
-  "data": {
-    "team": { "_id": "65f...", "name": "Equipo Frontend" },
-    "total": 3,
-    "byStatus": { "todo": 1, "in-progress": 1, "done": 1 }
-  }
-}
-```
-
-## Manejo de errores
-
-Todos los errores usan el mismo formato, generado por `middleware/errorHandler.js`:
-
-```json
-{
-  "success": false,
-  "status": 400,
-  "message": "Error de validación",
-  "errors": [ { "field": "email", "message": "El correo electrónico no tiene un formato válido" } ]
-}
-```
-
-| Código | Cuándo ocurre                                                                 |
-| ------ | ----------------------------------------------------------------------------- |
-| `400`  | Datos inválidos, id mal formado, JSON roto o parámetros de consulta incorrectos |
-| `404`  | El recurso (o un equipo/usuario referenciado) no existe, o la ruta no existe  |
-| `409`  | Registro duplicado (por ejemplo, un email o nombre de equipo repetido)        |
-| `500`  | Solo errores inesperados del servidor                                         |
-
-## Reglas de negocio
-
-- Un usuario solo puede ser asignado a una tarea de **su propio equipo**.
-- Al marcar una tarea como `done`, se guarda `completedAt` automáticamente; si vuelve a otro estado, se limpia.
-- La API solo acepta los campos permitidos de cada modelo; el resto del body se ignora.
-
-## Pruebas
-
-El archivo `requests.http` contiene al menos un ejemplo por endpoint, más ejemplos de errores 400, 404 y 409. Para usarlo:
-
-1. Instala la extensión **REST Client** en VS Code.
-2. Abre `requests.http` y pulsa **Send Request** sobre cada petición, de arriba hacia abajo.
-
-Las primeras peticiones guardan los ids automáticamente para que las siguientes funcionen sin copiar nada.
-
-## Autor
-
-Proyecto final de curso. Ramon Osvaldo Rodriguez Martinez
