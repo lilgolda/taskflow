@@ -31,3 +31,5 @@ README.md
 # Archivos que no hacen falta para ejecutar la API
 requests.http
 .env.example
+tests
+eslint.config.js

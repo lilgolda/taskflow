@@ -1,0 +1,76 @@
+name: CI
+
+# Valida cada pull request hacia main y cada push a main.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# El CI solo necesita leer el código.
+permissions:
+  contents: read
+
+# Si llega un push nuevo al mismo PR/rama, se cancela la ejecución anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+  docker:
+    name: docker
+    needs: [api, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # docker-compose.yml exige estas variables; en CI se usan los valores de ejemplo
+      # (no son secretos) y la URL de la API llega desde la variable del repositorio.
+      - name: Preparar .env de ejemplo
+        run: cp .env.example .env
+
+      - name: Construir imágenes con Docker Compose
+        run: docker compose build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
