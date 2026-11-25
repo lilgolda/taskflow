@@ -1,5 +1,8 @@
 # TaskFlow
 
+[![CI](https://github.com/lilgolda/taskflow/actions/workflows/ci.yml/badge.svg)](https://github.com/lilgolda/taskflow/actions/workflows/ci.yml)
+[![CD](https://github.com/lilgolda/taskflow/actions/workflows/cd.yml/badge.svg)](https://github.com/lilgolda/taskflow/actions/workflows/cd.yml)
+
 Gestor de tareas por equipos: **React (Vite) + Node.js (Express) + MongoDB**, contenerizado con Docker Compose.
 
 La API es la del proyecto final del módulo anterior (usuarios, equipos y tareas). Su documentación completa (endpoints, filtros, aggregation pipeline, errores) está en [`api/README.md`](api/README.md).
@@ -84,6 +87,62 @@ docker compose down -v
 | `MAX_POOL_SIZE` | Pool de conexiones de Mongoose |
 | `VITE_API_URL` | URL de la API que usa el navegador; se pasa como `ARG` al build del frontend |
 
+## Pipeline CI/CD (GitHub Actions)
+
+### En cada pull request hacia `main` — [`ci.yml`](.github/workflows/ci.yml)
+
+| Job | Qué hace |
+|---|---|
+| `api` | `npm ci` → `npm run lint` (ESLint) → `npm test` (Jest + Supertest) en `api/` |
+| `web` | `npm ci` → `npm run lint` (ESLint) → `npm test` (Vitest + Testing Library) → `npm run build` en `web/` |
+| `docker` | Cuando `api` y `web` pasan (`needs`), construye las imágenes con `docker compose build` |
+
+Los tres jobs usan Node 22 con caché de npm. El mismo workflow corre también en cada push a `main`.
+
+`main` está protegida: no se puede hacer push directo ni force push, todo entra por pull request y el merge solo se habilita cuando `api`, `web` y `docker` están en verde.
+
+### Al hacer merge a `main` o crear un tag — [`cd.yml`](.github/workflows/cd.yml)
+
+Una matriz construye y publica las dos imágenes en GitHub Container Registry, con caché de capas de Buildx (`type=gha`):
+
+- `ghcr.io/lilgolda/taskflow-api`
+- `ghcr.io/lilgolda/taskflow-web`
+
+| Evento | Tags publicados |
+|---|---|
+| Merge a `main` | `sha-<commit>` y `latest` |
+| Tag de Git `v1.0.0` | `1.0.0`, `1.0` y `sha-<commit>` |
+
+Para publicar una versión:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Para usar las imágenes publicadas:
+
+```bash
+docker pull ghcr.io/lilgolda/taskflow-api:latest
+docker pull ghcr.io/lilgolda/taskflow-web:1.0.0
+```
+
+### Secrets y variables
+
+| Nombre | Tipo | Uso |
+|---|---|---|
+| `GITHUB_TOKEN` | Secret automático de GitHub | Login en GHCR desde `cd.yml`. No hay tokens personales en el repositorio |
+| `VITE_API_URL` | Variable del repositorio (`vars.VITE_API_URL`) | URL de la API que se inyecta al compilar el frontend, en CI y en CD |
+
+Se configuran en **Settings › Secrets and variables › Actions**. Ningún valor sensible está escrito en los workflows ni se imprime en los logs.
+
+### Ejecutar las comprobaciones en local
+
+```bash
+cd api && npm ci && npm run lint && npm test
+cd web && npm ci && npm run lint && npm test && npm run build
+```
+
 ## Estructura
 
 ```
@@ -102,6 +161,7 @@ taskflow/
 │   ├── package.json
 │   ├── package-lock.json
 │   └── src/
+├── .github/workflows/   ci.yml y cd.yml
 ├── docker-compose.yml
 ├── .env.example
 ├── .gitignore
