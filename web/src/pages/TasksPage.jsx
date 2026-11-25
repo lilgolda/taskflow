@@ -43,7 +43,6 @@ export default function TasksPage() {
   const setField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   const setFilter = (field) => (e) => setFilters((f) => ({ ...f, [field]: e.target.value, page: 1 }));
 
-  const doneOnPage = tasks.filter((t) => t.status === 'done').length;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
